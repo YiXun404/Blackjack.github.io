@@ -1,0 +1,627 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Infinite Blackjack - Real Casino Standard</title>
+  <style>
+    /* ================= 基础重置 ================= */
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; user-select: none; -webkit-tap-highlight-color: transparent; }
+    
+    body { 
+      background-color: #000; color: #fff; display: flex; flex-direction: column; 
+      width: 100vw; height: 100vh; height: 100dvh; overflow: hidden; 
+    }
+
+    :root {
+      --gold: #d4af37; --gold-light: #f9e596;
+      --bg-red: #4a0404; --bg-red-dark: #1f0000;
+    }
+
+    /* ================= 1. 影片占位区 (严格 16:9, 纯黑无内容) ================= */
+    .video-container {
+      width: 100%; aspect-ratio: 16 / 9 !important; 
+      background: #000; 
+      z-index: 1; flex-shrink: 0; 
+    }
+
+    /* ================= 2. 状态与计时信息条 ================= */
+    .info-strip {
+      display: flex; justify-content: space-between; align-items: center; 
+      background: #1a1a1a; padding: 6px 12px; font-size: 11px; color: #ddd;
+      border-bottom: 1px solid #333; border-top: 1px solid #333; z-index: 2; flex-shrink: 0;
+    }
+    .table-info { display: flex; gap: 10px; color: #aaa; }
+    .balance-info { font-size: 14px; font-weight: bold; display: flex; align-items: center; gap: 3px; color: #fff; }
+    
+    .timer-bar-container {
+      flex: 1; max-width: 150px; height: 8px; background: #333; margin: 0 15px;
+      border-radius: 4px; overflow: hidden; border: 1px solid #000; box-shadow: inset 0 1px 3px rgba(0,0,0,0.8);
+    }
+    .timer-bar {
+      height: 100%; width: 100%; background: #4caf50; 
+      transition: width 0.1s linear, background-color 0.3s;
+    }
+    .timer-bar.warning { background: #ff9800; }
+    .timer-bar.danger { background: #f44336; }
+
+    /* ================= 3. 游戏下半区 (无限21点暗红质感) ================= */
+    .game-interface { 
+      background: radial-gradient(circle at center top, var(--bg-red) 0%, var(--bg-red-dark) 100%);
+      flex: 1; position: relative; display: flex; flex-direction: column; overflow: hidden;
+    }
+
+    /* 虚拟卡牌展示区 */
+    .digital-cards-area {
+      flex: 1; display: flex; flex-direction: column; justify-content: space-between;
+      padding: 10px 0; pointer-events: none; position: relative; z-index: 5;
+    }
+    .hand-container { display: flex; flex-direction: column; align-items: center; position: relative; height: 60px;}
+    
+    .score-bubble {
+      background: #fff; color: #000; padding: 2px 8px; border-radius: 12px; font-size: 14px; font-weight: bold;
+      position: absolute; left: 50%; margin-left: 35px; top: 15px; opacity: 0; transition: opacity 0.2s; box-shadow: 0 2px 5px rgba(0,0,0,0.5);
+    }
+    .score-bubble.show { opacity: 1; }
+    .score-bubble.bust { background: #333; color: #ff4444; text-decoration: line-through; }
+    .score-bubble.bj { background: var(--gold); color: #000; }
+
+    .cards-row { display: flex; justify-content: center; align-items: center; height: 50px; margin-left: 15px;}
+    .digital-card {
+      width: 36px; height: 50px; background: #fff; border-radius: 4px; border: 1px solid #ccc;
+      box-shadow: -2px 2px 6px rgba(0,0,0,0.5); display: flex; flex-direction: column; justify-content: space-between;
+      padding: 2px 4px; color: #000; font-weight: bold; font-size: 15px; position: relative; flex-shrink: 0;
+      margin-left: -20px; transform: translateY(10px); opacity: 0; transition: all 0.3s ease-out;
+    }
+    .digital-card.show { transform: translateY(0); opacity: 1; }
+    .digital-card.red { color: #d32f2f; }
+    .card-v { line-height: 1; align-self: flex-start; } .card-s { line-height: 1; align-self: flex-end; font-size: 18px; margin-top: -6px;}
+    .card-back { background: repeating-linear-gradient(45deg, #111, #111 4px, #333 4px, #333 8px); border: 2px solid #fff; }
+
+    /* 结算横幅 */
+    .result-banner {
+      position: absolute; top: 50%; left: 0; width: 100%; transform: translateY(-50%);
+      background: rgba(0, 0, 0, 0.75); border-top: 1px solid rgba(212, 175, 55, 0.4); border-bottom: 1px solid rgba(212, 175, 55, 0.4);
+      padding: 15px 0; text-align: center; opacity: 0; pointer-events: none; transition: opacity 0.4s; z-index: 50;
+      backdrop-filter: blur(2px); box-shadow: 0 5px 20px rgba(0,0,0,0.6);
+    }
+    .result-banner.show { opacity: 1; }
+    .res-title { font-size: 22px; color: var(--gold-light); font-weight: bold; letter-spacing: 2px;}
+    .res-amount { font-size: 28px; color: #fff; font-weight: bold; margin-top: 2px;}
+
+    /* 下注圆圈区 */
+    .betting-spots {
+      display: flex; justify-content: center; align-items: flex-end; gap: 12px;
+      padding-bottom: 15px; z-index: 10; position: relative;
+    }
+    
+    .bet-spot { display: flex; flex-direction: column; align-items: center; justify-content: flex-end; cursor: pointer; }
+    .bet-circle {
+      border: 2px solid rgba(255,255,255,0.25); border-radius: 50%; display: flex; align-items: center; justify-content: center;
+      background: rgba(0,0,0,0.15); transition: all 0.2s; position: relative;
+    }
+    .bet-spot:active .bet-circle { background: rgba(255,255,255,0.1); }
+    .bet-title { font-size: 9px; font-weight: bold; color: rgba(255,255,255,0.7); margin-top: 6px; text-transform: uppercase; text-align: center; letter-spacing: 0.5px;}
+    
+    .spot-side .bet-circle { width: 48px; height: 48px; }
+    .spot-main { margin: 0 2px; }
+    .spot-main .bet-circle { width: 70px; height: 70px; border: 2px solid var(--gold); border-style: dashed; }
+    .spot-main .bet-title { font-size: 11px; margin-top: 8px; color: var(--gold); }
+
+    /* 筹码堆叠 */
+    .chip-stack {
+      position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+      display: flex; flex-direction: column-reverse; align-items: center; pointer-events: none; z-index: 15;
+    }
+    .placed-chip {
+      width: 28px; height: 28px; background: radial-gradient(circle, #fff 40%, #ccc 80%);
+      border: 3px dashed; border-radius: 50%; box-shadow: 0 3px 5px rgba(0,0,0,0.7);
+      font-size: 10px; color: #000; font-weight: bold; display: flex; align-items: center; justify-content: center; margin-top: -20px;
+    }
+    .spot-main .placed-chip { width: 34px; height: 34px; font-size: 12px; margin-top: -24px; }
+
+    /* ================= 4. 底部控制面板 ================= */
+    .controls-panel {
+      height: 110px; background: #1a1a1a; border-top: 1px solid #333;
+      display: flex; flex-direction: column; justify-content: center; position: relative; flex-shrink: 0;
+    }
+
+    /* A. 下注筹码区 */
+    .betting-controls { display: flex; flex-direction: column; justify-content: space-evenly; height: 100%; transition: opacity 0.3s; }
+    .chip-rack { display: flex; justify-content: center; gap: 12px; align-items: center; }
+    .rack-chip {
+      width: 44px; height: 44px; border-radius: 50%; background-color: #fff; display: flex; align-items: center; justify-content: center;
+      font-weight: bold; font-size: 14px; color: #000; box-shadow: 0 4px 6px rgba(0,0,0,0.5), inset 0 0 0 3px #fff, inset 0 0 0 5px #ccc;
+      cursor: pointer; transition: transform 0.2s;
+    }
+    .rc-1 { border: 4px dashed #9e9e9e; } .rc-5 { border: 4px dashed #e53935; } 
+    .rc-25 { border: 4px dashed #4caf50; } .rc-100 { border: 4px dashed #1e88e5; }
+    .rack-chip.selected { transform: scale(1.15) translateY(-4px); box-shadow: 0 8px 12px rgba(0,0,0,0.8), 0 0 15px var(--gold); }
+
+    .bet-actions { display: flex; padding: 0 15px; gap: 10px; }
+    .btn-bet { flex: 1; padding: 10px 0; border-radius: 6px; font-weight: bold; font-size: 14px; text-align: center; cursor: pointer; border: none; box-shadow: 0 2px 4px rgba(0,0,0,0.3); }
+    .btn-undo { background: linear-gradient(to bottom, #4a4a4a, #2c2c2c); color: #aaa; border: 1px solid #111; } 
+    .btn-undo:active { background: linear-gradient(to bottom, #5a5a5a, #3c3c3c); }
+    .btn-submit { background: linear-gradient(to bottom, #4a4a4a, #2c2c2c); color: #aaa; border: 1px solid #111; pointer-events: none; }
+    .btn-submit.ready { background: linear-gradient(to bottom, #2e7d32, #1b5e20); color: #fff; pointer-events: auto; }
+
+    /* B. 游戏动作区 (全新真实世界平铺高级质感重绘) */
+    .action-controls {
+      position: absolute; top: 0; left: 0; width: 100%; height: 100%; 
+      display: flex; gap: 10px; padding: 15px; background: #161616; /* 深邃底部背景 */
+      transform: translateY(100%); opacity: 0; transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1); pointer-events: none; z-index: 10;
+    }
+    .action-controls.active { transform: translateY(0); opacity: 1; pointer-events: auto; }
+    
+    .btn-action { 
+      flex: 1; border-radius: 8px; font-weight: bold; font-size: 14px; letter-spacing: 0.5px;
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      cursor: pointer; background: #242424; /* 真实高级灰底色 */
+      border: 1px solid #333; color: #fff; transition: all 0.2s;
+    }
+    .btn-action:active { transform: scale(0.96); background: #1a1a1a;}
+    .btn-icon { font-size: 32px; font-weight: 900; margin-bottom: 2px; line-height: 1; }
+    
+    /* 底部发光指示线与强调色设计 (完全对标参考图) */
+    .btn-hit { border-bottom: 3px solid #4caf50; }
+    .btn-hit .btn-icon { color: #4caf50; }
+    .btn-hit:active { border-bottom-color: #2e7d32; }
+
+    .btn-stand { border-bottom: 3px solid #f44336; }
+    .btn-stand .btn-icon { color: #fbc02d; } /* 黄色手掌Icon */
+    .btn-stand:active { border-bottom-color: #c62828; }
+
+    .btn-double { border-bottom: 3px solid #ff9800; }
+    .btn-double .btn-icon { color: #ff9800; }
+    .btn-double:active { border-bottom-color: #ef6c00; }
+
+    /* ================= 5. 底部聊天框 ================= */
+    .chat-footer {
+      display: flex; align-items: center; background-color: #1c1c1e; padding: 10px 15px;
+      border-top: 1px solid #333; gap: 10px; color: #888; font-size: 14px;
+      flex-shrink: 0; 
+    }
+    .chat-icon { font-size: 16px; opacity: 0.7; }
+    .chat-input { flex: 1; background: transparent; border: none; color: #fff; outline: none; font-size: 14px; }
+    .chat-input::placeholder { color: #666; }
+
+  </style>
+</head>
+<body>
+
+  <!-- 1. 影片区 -->
+  <div class="video-container"></div>
+
+  <!-- 2. 状态条 -->
+  <div class="info-strip">
+    <div class="table-info"><span>♠ 11 #43 6725</span> <span>⚖ 10-100K</span></div>
+    <div class="timer-bar-container">
+      <div class="timer-bar" id="timerBar"></div>
+    </div>
+    <div class="balance-info"><span style="color:var(--gold);">€</span> <span id="balance">200.00</span></div>
+  </div>
+
+  <!-- 3. 无限21点交互区 -->
+  <div class="game-interface">
+    
+    <!-- 结算横幅 -->
+    <div class="result-banner" id="resultBanner">
+      <div class="res-title" id="resTitle">YOU WIN</div>
+      <div class="res-amount" id="resAmount">€0</div>
+    </div>
+
+    <!-- 虚拟卡牌展示 -->
+    <div class="digital-cards-area">
+      <div class="hand-container">
+        <div class="score-bubble" id="dealerScore"></div>
+        <div class="cards-row" id="dealerCards"></div>
+      </div>
+      <div class="hand-container">
+        <div class="score-bubble" id="playerScore"></div>
+        <div class="cards-row" id="playerCards"></div>
+      </div>
+    </div>
+
+    <!-- 下注圆圈区 -->
+    <div class="betting-spots">
+      <div class="bet-spot spot-side" onclick="placeBet('anypair')">
+        <div class="bet-circle"><div class="chip-stack" id="chips-anypair"></div></div>
+        <div class="bet-title">Any Pair</div>
+      </div>
+      <div class="bet-spot spot-side" onclick="placeBet('21plus3')">
+        <div class="bet-circle"><div class="chip-stack" id="chips-21plus3"></div></div>
+        <div class="bet-title">21+3</div>
+      </div>
+      
+      <!-- 主注 -->
+      <div class="bet-spot spot-main" onclick="placeBet('main')">
+        <div class="bet-circle"><div class="chip-stack" id="chips-main"></div></div>
+        <div class="bet-title">MAIN BET</div>
+      </div>
+
+      <div class="bet-spot spot-side" onclick="placeBet('hot3')">
+        <div class="bet-circle"><div class="chip-stack" id="chips-hot3"></div></div>
+        <div class="bet-title">HOT 3</div>
+      </div>
+      <div class="bet-spot spot-side" onclick="placeBet('bustit')">
+        <div class="bet-circle"><div class="chip-stack" id="chips-bustit"></div></div>
+        <div class="bet-title">BUST IT</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 4. 底部控制面板 -->
+  <div class="controls-panel">
+    <!-- 下注操作区 -->
+    <div class="betting-controls" id="bettingPanel">
+      <div class="chip-rack">
+        <div class="rack-chip rc-1" onclick="selectChip(1, this)">1</div>
+        <div class="rack-chip rc-5 selected" onclick="selectChip(5, this)">5</div>
+        <div class="rack-chip rc-25" onclick="selectChip(25, this)">25</div>
+        <div class="rack-chip rc-100" onclick="selectChip(100, this)">100</div>
+      </div>
+      <div class="bet-actions">
+        <div class="btn-bet btn-undo" onclick="undoBets()">↺ Undo</div>
+        <div class="btn-bet btn-submit" id="btnSubmit" onclick="manualConfirm()">✓ Confirm</div>
+      </div>
+    </div>
+
+    <!-- 游戏动作区 (全新对标真实赌场质感) -->
+    <div class="action-controls" id="actionPanel">
+      <div class="btn-action btn-hit" onclick="playerAction('hit')">
+        <div class="btn-icon">+</div><div>HIT</div>
+      </div>
+      <div class="btn-action btn-stand" onclick="playerAction('stand')">
+        <div class="btn-icon">✋</div><div>STAND</div>
+      </div>
+      <div class="btn-action btn-double" onclick="playerAction('double')" id="btnDouble">
+        <div class="btn-icon">✖2</div><div>DOUBLE</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 5. 底部聊天占位 -->
+  <div class="chat-footer">
+    <div class="chat-icon">💬</div>
+    <input type="text" class="chat-input" placeholder="Bet to enable chatting" disabled />
+    <div class="chat-icon" style="opacity: 1;">😀</div>
+  </div>
+
+  <script>
+    // ================= 游戏核心逻辑 =================
+    let balance = 200.00;
+    let currentChip = 5;
+    let bets = { main: 0, anypair: 0, '21plus3': 0, hot3: 0, bustit: 0 };
+    let confirmedBets = { main: 0, anypair: 0, '21plus3': 0, hot3: 0, bustit: 0 };
+    let gameState = 'BETTING'; 
+    
+    // 计时器修改为 7 秒
+    const totalTime = 7;
+    let timeLeft = totalTime;
+    let timerInterval;
+    
+    let pHand = []; let dHand = [];
+    let hiddenCard = null;
+
+    const suits = ['♠', '♥', '♦', '♣'];
+    const values = ['2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K', 'A'];
+
+    const elBalance = document.getElementById('balance');
+    const timerBar = document.getElementById('timerBar');
+    const elSubmit = document.getElementById('btnSubmit');
+    const elBanner = document.getElementById('resultBanner');
+
+    window.onload = () => { startTimer(); };
+
+    // --- UI 与下注逻辑 ---
+    window.selectChip = function(val, el) {
+      if(gameState !== 'BETTING') return;
+      currentChip = val;
+      document.querySelectorAll('.rack-chip').forEach(c => c.classList.remove('selected'));
+      el.classList.add('selected');
+    };
+
+    window.placeBet = function(spot) {
+      if(gameState !== 'BETTING') return;
+      if(balance < currentChip) return alert("Insufficient balance!");
+
+      balance -= currentChip;
+      bets[spot] += currentChip;
+      elBalance.innerText = balance.toLocaleString('en-US', {minimumFractionDigits:2});
+      
+      const stack = document.getElementById(`chips-${spot}`);
+      const chipEl = document.createElement('div');
+      chipEl.className = 'placed-chip';
+      chipEl.innerText = currentChip;
+      if(currentChip==1) chipEl.style.borderColor='#9e9e9e';
+      else if(currentChip==5) chipEl.style.borderColor='#e53935';
+      else if(currentChip==25) chipEl.style.borderColor='#4caf50';
+      else chipEl.style.borderColor='#1e88e5';
+      
+      chipEl.style.transform = `rotate(${Math.floor(Math.random()*60-30)}deg)`;
+      stack.appendChild(chipEl);
+
+      elSubmit.classList.add('ready');
+      elSubmit.innerText = '✓ Confirm';
+    };
+
+    window.undoBets = function() {
+      if(gameState !== 'BETTING') return;
+      let totalToRefund = Object.values(bets).reduce((a,b)=>a+b, 0);
+      if(totalToRefund === 0) return;
+
+      balance += totalToRefund;
+      elBalance.innerText = balance.toLocaleString('en-US', {minimumFractionDigits:2});
+      bets = { main: 0, anypair: 0, '21plus3': 0, hot3: 0, bustit: 0 };
+      
+      Object.keys(bets).forEach(k => document.getElementById(`chips-${k}`).innerHTML = '');
+      elSubmit.classList.remove('ready');
+    };
+
+    window.manualConfirm = function() {
+      if(Object.values(bets).reduce((a,b)=>a+b, 0) === 0) return; 
+      confirmedBets.main += bets.main;
+      confirmedBets.anypair += bets.anypair;
+      confirmedBets['21plus3'] += bets['21plus3'];
+      confirmedBets.hot3 += bets.hot3;
+      confirmedBets.bustit += bets.bustit;
+      bets = { main: 0, anypair: 0, '21plus3': 0, hot3: 0, bustit: 0 };
+      elSubmit.classList.remove('ready');
+      elSubmit.innerText = 'Accepted';
+    };
+
+    // --- 倒计时逻辑 ---
+    function startTimer() {
+      gameState = 'BETTING';
+      elBanner.classList.remove('show');
+      document.getElementById('actionPanel').classList.remove('active');
+      document.getElementById('bettingPanel').style.opacity = '1';
+      document.getElementById('playerCards').innerHTML = '';
+      document.getElementById('dealerCards').innerHTML = '';
+      document.getElementById('playerScore').classList.remove('show', 'bust', 'bj');
+      document.getElementById('dealerScore').classList.remove('show', 'bust', 'bj');
+      
+      Object.keys(confirmedBets).forEach(k => document.getElementById(`chips-${k}`).innerHTML = '');
+      
+      confirmedBets = { main: 0, anypair: 0, '21plus3': 0, hot3: 0, bustit: 0 };
+      bets = { main: 0, anypair: 0, '21plus3': 0, hot3: 0, bustit: 0 };
+      pHand = []; dHand = [];
+      elSubmit.innerText = '✓ Confirm';
+      elSubmit.classList.remove('ready');
+      
+      timeLeft = totalTime;
+      timerBar.style.width = '100%';
+      timerBar.className = 'timer-bar';
+      
+      clearInterval(timerInterval);
+      timerInterval = setInterval(() => {
+        timeLeft -= 0.1;
+        if(timeLeft < 0) timeLeft = 0;
+        
+        let pct = (timeLeft / totalTime) * 100;
+        timerBar.style.width = pct + '%';
+
+        if (timeLeft <= 1.5 && timeLeft > 0) timerBar.className = 'timer-bar danger';
+        else if (timeLeft <= 3 && timeLeft > 1.5) timerBar.className = 'timer-bar warning';
+        
+        if(timeLeft <= 0) {
+          clearInterval(timerInterval);
+          // 自动确认遗留筹码
+          if(Object.values(bets).reduce((a,b)=>a+b, 0) > 0) {
+             confirmedBets.main += bets.main;
+             confirmedBets.anypair += bets.anypair;
+             confirmedBets['21plus3'] += bets['21plus3'];
+             confirmedBets.hot3 += bets.hot3;
+             confirmedBets.bustit += bets.bustit;
+             bets = { main: 0, anypair: 0, '21plus3': 0, hot3: 0, bustit: 0 };
+          }
+          timerBar.style.width = '0%';
+          // 无论是否有下注，强制开始发牌
+          setTimeout(startDealing, 400);
+        }
+      }, 100);
+    }
+
+    // --- 游戏卡牌与计算逻辑 ---
+    function getCardVal(v) { return ['J','Q','K'].includes(v) ? 10 : (v==='A' ? 11 : parseInt(v)); }
+    
+    function calcScore(hand) {
+      let score = 0, aces = 0;
+      hand.forEach(c => { score += c.num; if(c.val==='A') aces++; });
+      while(score > 21 && aces > 0) { score -= 10; aces--; }
+      return { val: score, soft: aces > 0 };
+    }
+
+    function drawCard(target, hidden=false) {
+      const suit = suits[Math.floor(Math.random() * suits.length)];
+      const val = values[Math.floor(Math.random() * values.length)];
+      const isRed = suit === '♥' || suit === '♦';
+      const cData = { suit, val, num: getCardVal(val), isRed };
+
+      const el = document.createElement('div');
+      if(hidden) {
+        el.className = 'digital-card card-back show';
+        hiddenCard = cData;
+      } else {
+        el.className = `digital-card ${isRed ? 'red' : ''}`;
+        el.innerHTML = `<div class="card-v">${val}</div><div class="card-s">${suit}</div>`;
+      }
+      
+      document.getElementById(target+'Cards').appendChild(el);
+      setTimeout(()=> el.classList.add('show'), 50);
+
+      if(target === 'player') { pHand.push(cData); updateScore('player'); }
+      else { dHand.push(cData); if(!hidden) updateScore('dealer'); }
+    }
+
+    function updateScore(target) {
+      let hand = target==='player' ? pHand : dHand;
+      let visible = (target==='dealer' && hand.length>1 && hand[1]===hiddenCard) ? [hand[0]] : hand;
+      let s = calcScore(visible);
+      let el = document.getElementById(target+'Score');
+      if(s.val > 0) {
+        el.classList.add('show');
+        el.innerText = (s.soft && s.val < 21) ? `${s.val-10}/${s.val}` : s.val;
+      }
+    }
+
+    // --- 游戏流程 (包含旁观者逻辑) ---
+    function startDealing() {
+      gameState = 'DEALING';
+      document.getElementById('bettingPanel').style.opacity = '0.3';
+      
+      setTimeout(()=> drawCard('player'), 400);
+      setTimeout(()=> drawCard('dealer'), 800);
+      setTimeout(()=> drawCard('player'), 1200);
+      setTimeout(()=> drawCard('dealer', true), 1600);
+
+      setTimeout(() => {
+        let s = calcScore(pHand).val;
+        
+        // 旁观者模式：未下主注，直接跳过玩家操作进入庄家回合
+        if (confirmedBets.main === 0) {
+            gameState = 'SPECTATOR';
+            dealerTurn();
+        } 
+        // 玩家下注并获得BJ：直接进入庄家回合结算
+        else if(s === 21) {
+          document.getElementById('playerScore').classList.add('bj');
+          document.getElementById('playerScore').innerText = 'BLACKJACK';
+          dealerTurn();
+        } 
+        // 玩家下注并需操作
+        else {
+          gameState = 'ACTION';
+          document.getElementById('actionPanel').classList.add('active');
+          document.getElementById('btnDouble').style.opacity = pHand.length === 2 ? '1' : '0.5';
+          document.getElementById('btnDouble').style.pointerEvents = pHand.length === 2 ? 'auto' : 'none';
+        }
+      }, 2400);
+    }
+
+    window.playerAction = function(act) {
+      if(gameState !== 'ACTION') return;
+      
+      if(act === 'double') {
+        if(balance < confirmedBets.main) return alert("Insufficient balance!");
+        balance -= confirmedBets.main;
+        confirmedBets.main *= 2;
+        elBalance.innerText = balance.toLocaleString('en-US', {minimumFractionDigits:2});
+        
+        drawCard('player');
+        document.getElementById('actionPanel').classList.remove('active');
+        gameState = 'DEALER_TURN';
+        setTimeout(dealerTurn, 1000);
+        return;
+      }
+
+      if(act === 'hit') {
+        drawCard('player');
+        let s = calcScore(pHand).val;
+        document.getElementById('btnDouble').style.opacity = '0.5';
+        document.getElementById('btnDouble').style.pointerEvents = 'none';
+        
+        if(s >= 21) {
+          document.getElementById('actionPanel').classList.remove('active');
+          if(s > 21) {
+            document.getElementById('playerScore').classList.add('bust');
+            document.getElementById('playerScore').innerText = 'BUST';
+          }
+          gameState = 'DEALER_TURN';
+          setTimeout(dealerTurn, 1000);
+        }
+      }
+
+      if(act === 'stand') {
+        document.getElementById('actionPanel').classList.remove('active');
+        gameState = 'DEALER_TURN';
+        dealerTurn();
+      }
+    };
+
+    function dealerTurn() {
+      let hiddenEl = document.querySelector('.card-back');
+      if(hiddenEl) {
+        hiddenEl.className = `digital-card ${hiddenCard.isRed ? 'red' : ''} show`;
+        hiddenEl.innerHTML = `<div class="card-v">${hiddenCard.val}</div><div class="card-s">${hiddenCard.suit}</div>`;
+      }
+      updateScore('dealer');
+
+      const drawLoop = () => {
+        let ds = calcScore(dHand).val;
+        let ps = calcScore(pHand).val;
+        
+        if(ds < 17) {
+          setTimeout(() => { drawCard('dealer'); drawLoop(); }, 800);
+        } else {
+          if(ds > 21) {
+            document.getElementById('dealerScore').classList.add('bust');
+            document.getElementById('dealerScore').innerText = 'BUST';
+          }
+          setTimeout(calcResult, 800);
+        }
+      };
+      setTimeout(drawLoop, 800);
+    }
+
+    function calcResult() {
+      let ps = calcScore(pHand).val;
+      let ds = calcScore(dHand).val;
+      let winAmt = 0;
+      let msg = "";
+
+      // 旁观者模式：不计算赔付，仅显示谁赢
+      if (confirmedBets.main === 0 && Object.values(confirmedBets).reduce((a,b)=>a+b, 0) === 0) {
+        if(ps > 21) { msg = "DEALER WINS"; }
+        else if (ds > 21 || ps > ds) { msg = "PLAYER WINS"; }
+        else if (ps < ds) { msg = "DEALER WINS"; }
+        else { msg = "PUSH"; }
+        
+        document.getElementById('resTitle').innerText = msg;
+        document.getElementById('resAmount').innerText = "";
+        elBanner.classList.add('show');
+        setTimeout(() => { startTimer(); }, 3500);
+        return;
+      }
+
+      // 正常玩家结算
+      if(confirmedBets.main > 0) {
+        if(ps > 21) { msg = "DEALER WINS"; }
+        else if (ds > 21 || ps > ds) {
+          if(ps === 21 && pHand.length === 2) {
+            msg = "BLACKJACK!";
+            winAmt += confirmedBets.main * 2.5; 
+          } else {
+            msg = "YOU WIN";
+            winAmt += confirmedBets.main * 2;
+          }
+        } else if (ps < ds) { msg = "DEALER WINS"; }
+        else { msg = "PUSH"; winAmt += confirmedBets.main; }
+      } else {
+        msg = "BETS RESOLVED"; 
+      }
+
+      // 边注奖励
+      let sideWin = 0;
+      if(confirmedBets.anypair > 0 && Math.random() > 0.7) sideWin += confirmedBets.anypair * 8;
+      if(confirmedBets['21plus3'] > 0 && Math.random() > 0.8) sideWin += confirmedBets['21plus3'] * 9;
+      if(confirmedBets.hot3 > 0 && Math.random() > 0.8) sideWin += confirmedBets.hot3 * 9;
+      if(confirmedBets.bustit > 0 && ds > 21) sideWin += confirmedBets.bustit * 2.5;
+      
+      winAmt += sideWin;
+
+      document.getElementById('resTitle').innerText = msg;
+      if(winAmt > 0) {
+        balance += winAmt;
+        elBalance.innerText = balance.toLocaleString('en-US', {minimumFractionDigits:2});
+        document.getElementById('resAmount').innerText = `€${winAmt}`;
+      } else {
+        document.getElementById('resAmount').innerText = "";
+      }
+      elBanner.classList.add('show');
+
+      setTimeout(() => { startTimer(); }, 3500);
+    }
+  </script>
+</body>
+</html>
